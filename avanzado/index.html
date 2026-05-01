@@ -740,9 +740,41 @@
       </div>
     </div>
     <div>
+      <h3>Formato</h3>
+      <div class="dropdown" id="formatDropdown">
+        <button class="dropdown-btn" id="formatDropdownBtn">
+          <span class="current-label" id="formatCurrent">Cash</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="dropdown-menu" id="formatMenu">
+          <div class="dropdown-item" data-format="cash">
+            <span class="code">CASH</span>
+            <span class="desc">Cash game</span>
+          </div>
+          <div class="dropdown-item" data-format="torneo">
+            <span class="code">TORNEO</span>
+            <span class="desc">MTT / SNG</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
       <h3>Stacks</h3>
-      <div class="checkbox-group">
-        <label class="check"><input type="radio" name="stack" value="100" checked> 100bb</label>
+      <div class="dropdown" id="stackDropdown">
+        <button class="dropdown-btn" id="stackDropdownBtn">
+          <span class="current-label" id="stackCurrent">100bb</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="dropdown-menu" id="stackMenu">
+          <div class="dropdown-item" data-stack="100">
+            <span class="code">100BB</span>
+            <span class="desc">Stack profundo (estándar)</span>
+          </div>
+          <div class="dropdown-item" data-stack="50">
+            <span class="code">50BB</span>
+            <span class="desc">Stack medio</span>
+          </div>
+        </div>
       </div>
     </div>
     <button class="next-btn" id="btnNew">Nueva mano</button>
@@ -860,6 +892,10 @@ const SPOT_TYPES = [
   { code: 'CC',     desc: 'Cold Call (no-BB)',                          enabled: false }
 ];
 let selectedSpot = 'OR_ADV'; // por defecto en modo avanzado
+// Formato de juego (cash | torneo) — afecta etiquetado y futuros rangos específicos
+let selectedFormat = 'cash';
+// Stack en BB — afecta qué set de rangos se carga (50 está bloqueado por ahora)
+let selectedStack = '100';
 
 /* ---------- ESCENARIOS DE ROL ---------- */
 // Cada escenario define:
@@ -972,6 +1008,10 @@ function init() {
 
   // Construir dropdown de tipos de spot
   buildSpotDropdown();
+
+  // Construir dropdowns nuevos (formato y stack)
+  buildFormatDropdown();
+  buildStackDropdown();
 
   // Mostrar / ocultar villano según spot inicial
   refreshVillainVisibility();
@@ -1176,6 +1216,66 @@ function buildSpotDropdown() {
   });
 }
 
+/* ---------- DROPDOWN DE FORMATO (Cash / Torneo) ---------- */
+function buildFormatDropdown() {
+  const menu = document.getElementById('formatMenu');
+  const btn  = document.getElementById('formatDropdownBtn');
+  const wrap = document.getElementById('formatDropdown');
+  const label = document.getElementById('formatCurrent');
+
+  // Estado inicial
+  menu.querySelectorAll('.dropdown-item').forEach(item => {
+    if (item.dataset.format === selectedFormat) item.classList.add('active');
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (item.classList.contains('disabled')) return;
+      selectedFormat = item.dataset.format;
+      label.textContent = selectedFormat === 'cash' ? 'Cash' : 'Torneo';
+      menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
+      item.classList.add('active');
+      wrap.classList.remove('open');
+    });
+  });
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    wrap.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+}
+
+/* ---------- DROPDOWN DE STACK (50bb / 100bb) ---------- */
+function buildStackDropdown() {
+  const menu = document.getElementById('stackMenu');
+  const btn  = document.getElementById('stackDropdownBtn');
+  const wrap = document.getElementById('stackDropdown');
+  const label = document.getElementById('stackCurrent');
+
+  // Estado inicial
+  menu.querySelectorAll('.dropdown-item').forEach(item => {
+    if (item.dataset.stack === selectedStack) item.classList.add('active');
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (item.classList.contains('disabled')) return; // 50bb está bloqueado
+      selectedStack = item.dataset.stack;
+      label.textContent = selectedStack + 'bb';
+      menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
+      item.classList.add('active');
+      wrap.classList.remove('open');
+    });
+  });
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    wrap.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+}
+
 /* ---------- GENERAR ESCENARIO ---------- */
 function getSelectedHeroPositions() {
   return POSITIONS.filter(p => selectedPositions.has(p));
@@ -1346,10 +1446,10 @@ function newHand() {
 
   if (selectedSpot === 'OR') {
     rangeKey = 'OR_' + heroPos;
-    range = RANGES[rangeKey];
+    range = resolveRange(rangeKey);
   } else if (selectedSpot === 'OR_ADV') {
     rangeKey = 'OR_ADV_' + heroPos;
-    range = RANGES[rangeKey];
+    range = resolveRange(rangeKey);
   } else if (selectedSpot === '3b') {
     // Buscar escenarios 3b cuyo hero sea heroPos
     const possibleScenarios = _3B_SCENARIOS.filter(s => s.heroes.includes(heroPos));
@@ -1373,7 +1473,7 @@ function newHand() {
     if (villainPool.length === 0) return newHand();
     villainPos = pickRandom(villainPool);
     rangeKey = scenario.rangeKey;
-    range = RANGES[rangeKey];
+    range = resolveRange(rangeKey);
   } else if (selectedSpot === 'ROL') {
     const possibleScenarios = ROL_SCENARIOS.filter(s => s.heroes.includes(heroPos));
     const validScenarios = possibleScenarios.filter(s => {
@@ -1389,7 +1489,7 @@ function newHand() {
     limpers = shuffled.slice(0, nLimpers).sort((a,b) => POSITIONS.indexOf(a) - POSITIONS.indexOf(b));
 
     rangeKey = scenario.rangeKey;
-    range = RANGES[rangeKey];
+    range = resolveRange(rangeKey);
   }
 
   // Elegir mano con sesgo de fold según FOLD_PERCENTAGE
@@ -2043,6 +2143,73 @@ const RANGES_DATA = {
       call: []
     },
 
+    /* ---------- OR Avanzado para Cash 50bb (sufijo __c50) ----------
+       Placeholders. Se rellenan con los rangos espec\u00edficos para 50bb.
+       Si una posici\u00f3n no se carga, el motor har\u00e1 fallback al rango Cash 100bb.
+    */
+    "OR_ADV_UTG__c50":  {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "AKo","AQo","AJo","KQo"],
+      call: []
+    },
+    "OR_ADV_UTG1__c50": {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "AKo","AQo","AJo","KQo"],
+      call: []
+    },
+    "OR_ADV_LJ__c50":   {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","QJs","QTs","Q9s","JTs","J9s","T9s","65s",
+              "AKo","AQo","AJo","ATo","KQo","KJo"],
+      call: []
+    },
+    "OR_ADV_HJ__c50":   {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","K7s",
+              "QJs","QTs","Q9s","JTs","J9s","T9s","98s","76s","65s","54s",
+              "AKo","AQo","AJo","ATo","KQo","KJo","KTo","QJo"],
+      call: []
+    },
+    "OR_ADV_CO__c50":   {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s",
+              "QJs","QTs","Q9s","Q8s","Q7s","JTs","J9s","J8s","J7s",
+              "T9s","T8s","T7s","98s","97s","87s","76s","65s","54s",
+              "AKo","AQo","AJo","ATo","A9o","KQo","KJo","KTo","QJo","QTo","JTo"],
+      call: []
+    },
+    "OR_ADV_BTN__c50":  {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QJs","QTs","Q9s","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
+              "JTs","J9s","J8s","J7s","J6s","J5s",
+              "T9s","T8s","T7s","T6s",
+              "98s","97s","96s","87s","86s","85s","76s","75s","65s","64s","54s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
+              "KQo","KJo","KTo","K9o","QJo","QTo","Q9o","JTo","J9o","T9o"],
+      call: []
+    },
+    "OR_ADV_SB__c50":   {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QJs","QTs","Q9s","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
+              "JTs","J9s","J8s","J7s","J6s","J5s",
+              "T9s","T8s","T7s","T6s",
+              "98s","97s","96s","87s","86s","85s","76s","75s","65s","64s","54s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
+              "KQo","KJo","KTo","K9o","QJo","QTo","Q9o","JTo","J9o","T9o"],
+      call: []
+    },
+
     /* ---------- ROL (Raise Over Limp) — pendiente de cargar rangos ---------- */
     // Los 6 escenarios ROL. Mientras no tengan datos, todas las manos serán "fold".
     "ROL_EP":        {
@@ -2321,6 +2488,30 @@ function normalizeComboKey(combo) {
   const order = {A:14,K:13,Q:12,J:11,T:10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2};
   if (order[r1] >= order[r2]) return combo;
   return r2 + s2 + r1 + s1;
+}
+
+/* Resuelve el rango a usar según el formato y stack actuales.
+   Estrategia de búsqueda (en este orden):
+   1. {baseKey}__{formato}{stack}  (ej: OR_ADV_UTG__c50, OR_ADV_UTG__t100)
+   2. {baseKey}__{stack}            (ej: OR_ADV_UTG__50 — si no varía por formato)
+   3. {baseKey}                     (ej: OR_ADV_UTG — fallback al rango por defecto Cash 100bb)
+   Un rango se considera "no cargado" si tiene 0 entradas (placeholder vacío).
+*/
+function resolveRange(baseKey) {
+  if (!baseKey) return null;
+  const formatCode = selectedFormat === 'cash' ? 'c' : 't';
+  const stack = selectedStack;
+  const candidates = [
+    baseKey + '__' + formatCode + stack,  // ej: OR_ADV_UTG__c50
+    baseKey + '__' + stack,               // ej: OR_ADV_UTG__50 (compartido entre cash/torneo)
+    baseKey                                // fallback genérico
+  ];
+  for (const k of candidates) {
+    const r = RANGES[k];
+    // Solo aceptar rangos con al menos una mano (los placeholders vacíos se saltan)
+    if (r && Object.keys(r).length > 0) return r;
+  }
+  return null;
 }
 
 /* Devuelve la acción correcta para un combo concreto (cartas con palos).
