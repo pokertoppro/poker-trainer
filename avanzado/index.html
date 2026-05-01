@@ -791,7 +791,7 @@
     <div class="result-banner" id="resultBanner"></div>
     <div class="result-detail" id="resultDetail"></div>
 
-    <div class="matrix-title">Rango completo</div>
+    <div class="matrix-title" id="matrixTitle">Rango completo</div>
     <div class="matrix" id="matrix"></div>
     <div class="legend">
       <div class="legend-item"><div class="legend-swatch" style="background:#c23b3b"></div> Raise</div>
@@ -1806,6 +1806,17 @@ function showFeedback(userAction, correctAction, isOk) {
     ${mixedNote}
   `;
 
+  // Título de la matriz: "Rango completo (X% desde POS)" si hay pct definido,
+  // si no: "Rango completo desde POS"
+  const titleEl = document.getElementById('matrixTitle');
+  const pct = sc.range && sc.range.__pct;
+  const posLabel = sc.heroPos;
+  if (pct !== undefined && pct !== null) {
+    titleEl.textContent = `Rango completo (${pct}% desde ${posLabel})`;
+  } else {
+    titleEl.textContent = `Rango completo desde ${posLabel}`;
+  }
+
   renderMatrix(sc.range, sc.handKey, isBbRol);
   document.getElementById('feedback').classList.add('show');
 }
@@ -2152,21 +2163,24 @@ const RANGES_DATA = {
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
               "AKo","AQo","AJo","KQo"],
-      call: []
+      call: [],
+      pct: 16
     },
     "OR_ADV_UTG1__c50": {
       raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
               "AKo","AQo","AJo","KQo"],
-      call: []
+      call: [],
+      pct: 16
     },
     "OR_ADV_LJ__c50":   {
       raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K9s","K8s","QJs","QTs","Q9s","JTs","J9s","T9s","65s",
               "AKo","AQo","AJo","ATo","KQo","KJo"],
-      call: []
+      call: [],
+      pct: 18
     },
     "OR_ADV_HJ__c50":   {
       raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
@@ -2174,7 +2188,8 @@ const RANGES_DATA = {
               "KQs","KJs","KTs","K9s","K8s","K7s",
               "QJs","QTs","Q9s","JTs","J9s","T9s","98s","76s","65s","54s",
               "AKo","AQo","AJo","ATo","KQo","KJo","KTo","QJo"],
-      call: []
+      call: [],
+      pct: 21
     },
     "OR_ADV_CO__c50":   {
       raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
@@ -2183,7 +2198,8 @@ const RANGES_DATA = {
               "QJs","QTs","Q9s","Q8s","Q7s","JTs","J9s","J8s","J7s",
               "T9s","T8s","T7s","98s","97s","87s","76s","65s","54s",
               "AKo","AQo","AJo","ATo","A9o","KQo","KJo","KTo","QJo","QTo","JTo"],
-      call: []
+      call: [],
+      pct: 27
     },
     "OR_ADV_BTN__c50":  {
       raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
@@ -2195,7 +2211,8 @@ const RANGES_DATA = {
               "98s","97s","96s","87s","86s","85s","76s","75s","65s","64s","54s",
               "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
               "KQo","KJo","KTo","K9o","QJo","QTo","Q9o","JTo","J9o","T9o"],
-      call: []
+      call: [],
+      pct: 42
     },
     "OR_ADV_SB__c50":   {
       raise: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
@@ -2207,7 +2224,8 @@ const RANGES_DATA = {
               "98s","97s","96s","87s","86s","85s","76s","75s","65s","64s","54s",
               "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
               "KQo","KJo","KTo","K9o","QJo","QTo","Q9o","JTo","J9o","T9o"],
-      call: []
+      call: [],
+      pct: 42
     },
 
     /* ---------- ROL (Raise Over Limp) — pendiente de cargar rangos ---------- */
@@ -2474,6 +2492,11 @@ const RANGES = (function compileRanges() {
         }
       }
       Object.defineProperty(out[key], '__overrides', { value: ovr, enumerable: false });
+    }
+    // Adjuntar porcentaje del rango si está definido (no enumerable para no
+    // aparecer en la matriz 13x13)
+    if (spec.pct !== undefined && spec.pct !== null) {
+      Object.defineProperty(out[key], '__pct', { value: spec.pct, enumerable: false });
     }
   }
   return out;
