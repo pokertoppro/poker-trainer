@@ -2381,11 +2381,11 @@ const RANGES_DATA = {
       call:  ["88","77","66","55","44","33","22",
               "ATs","A9s","A8s","A7s","A6s","A3s","A2s",
               "K7s","K6s","K5s","K4s","K3s","K2s",
-              "Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
+              "QJs","QTs","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
               "J8s","J7s","J6s","J5s","J4s","J3s","J2s",
               "T7s","T6s","T5s","97s","96s","95s","86s","85s","75s","74s","64s","63s",
               "53s","52s","43s","42s","32s",
-              "A9o","A8o","A7o","A6o","A5o","KJo","KTo","K9o","QJo","QTo","Q9o",
+              "ATo","A9o","A8o","A7o","A6o","A5o","KJo","KTo","K9o","QJo","QTo","Q9o",
               "JTo","J9o","T9o","T8o","98o","87o"]
     },
     // Rangos IP (Hero en posición)
@@ -2458,7 +2458,87 @@ const RANGES_DATA = {
               "53s","52s","43s","42s","32s",
               "AJo","ATo","A9o","A8o","A7o","A6o","KQo","KJo","KTo","K9o",
               "QJo","QTo","JTo","T9o","98o","87o"]
-    }
+    },
+
+    /* ---------- 3b para Cash 50bb (sufijo __c50) ----------
+       Placeholders. Misma estructura de escenarios que en 100bb.
+       Si una clave queda vac\u00eda, el motor har\u00e1 fallback al rango Cash 100bb.
+    */
+    "3b_SB_vs_EP__c50": {
+      raise: ["AA","KK","QQ","JJ",
+              "AKs","A5s","A4s","KQs","KJs","KTs",
+              "AKo"],
+      call:  ["TT","99","88","77","66",
+              "AQs","AJs","ATs","AQo"]
+    },
+    "3b_SB_vs_MP__c50": {
+      raise: ["AA","KK","QQ","JJ","TT",
+              "AKs","A5s","A4s","KQs","KJs","KTs","K9s",
+              "AKo","AQo","KQo"],
+      call:  ["99","88","77","66","55","44","33","22",
+              "AQs","AJs","ATs","A9s","A8s","QJs","QTs","JTs","T9s",
+              "AJo"]
+    },
+    "3b_SB_vs_LP__c50": {
+      raise: ["AA","KK","QQ","JJ","TT","99","88","77","66",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "AKo","AQo","AJo","ATo","KQo","KJo"],
+      call:  ["55","44","33","22","K8s","T8s","98s"],
+      // K8s, T8s, 98s: combos ♠♠ y ♣♣ van a raise; ♥♥ y ♦♦ se quedan como call (base)
+      comboOverrides: {
+        "K8s": { raise: ["Ks8s","Kc8c"] },
+        "T8s": { raise: ["Ts8s","Tc8c"] },
+        "98s": { raise: ["9s8s","9c8c"] }
+      },
+      pct: 14
+    },
+    "3b_BB_vs_EP__c50": {
+      raise: ["AA","KK","QQ","JJ",
+              "AKs","A5s","A4s","KQs","KJs","KTs",
+              "AKo"],
+      call:  ["TT","99","88","77","66","55","44","33","22",
+              "AQs","AJs","ATs","A9s","A8s","A7s","A6s","A3s","A2s",
+              "K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QJs","QTs","Q9s","Q8s","Q7s",
+              "JTs","J9s","J8s","J7s","T9s","T8s","T7s",
+              "98s","97s","96s","87s","86s","85s","76s","75s","74s",
+              "65s","64s","54s","53s","43s",
+              "AQo","AJo","ATo","KQo","KJo","QJo"]
+    },
+    "3b_BB_vs_MP__c50": {
+      raise: ["AA","KK","QQ","JJ","TT",
+              "AKs","A5s","A4s","KJs","KTs","QJs","JTs","J9s","54s",
+              "AKo","AQo"],
+      call:  ["99","88","77","66","55","44","33","22",
+              "AQs","AJs","ATs","A9s","A8s","A7s","A6s","A3s","A2s",
+              "KQs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QTs","Q9s","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s",
+              "J8s","J7s","J6s","T8s","T7s","T6s",
+              "98s","97s","96s","87s","86s","85s","76s","75s","74s",
+              "65s","64s","53s","43s",
+              "AJo","ATo","KQo","KJo","KTo","QJo"]
+    },
+    "3b_BB_vs_LP__c50": {
+      raise: ["AA","KK","QQ","JJ","TT","99","88",
+              "AKs","AQs","AJs","K8s","J9s","T9s","T8s","98s","87s",
+              "AKo","AQo","AJo","A7o","A6o","A5o","A4o","K9o"],
+      call:  ["77","66","55","44","33","22",
+              "ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KTs","K9s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QTs","Q9s","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
+              "JTs","J8s","J7s","J6s","J5s","J4s","J3s","J2s",
+              "T7s","T6s","97s","96s","95s","86s","85s","84s",
+              "76s","75s","74s","73s","65s","64s","63s","62s",
+              "54s","53s","52s","43s","42s","32s",
+              "ATo","A9o","A8o","A3o","A2o",
+              "KQo","KJo","KTo","K8o",
+              "QJo","QTo","Q9o","JTo","J9o","T9o"]
+    },
+    "3b_IP_vs_EP__c50": { raise: [], call: [] },
+    "3b_IP_vs_MP__c50": { raise: [], call: [] },
+    "3b_IP_vs_LP__c50": { raise: [], call: [] },
+    "3b_IP_vs_SB__c50": { raise: [], call: [] }
   }
 };
 
