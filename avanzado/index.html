@@ -2363,7 +2363,8 @@ const RANGES_DATA = {
       raise: ["AA","KK","QQ"],
       push:  ["JJ","TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
-              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "KQs","KJs","KTs","K9s","K8s",
+              "QJs","QTs","Q9s","JTs","J9s","J8s","T9s","T8s",
               "AKo","AQo","AJo","ATo","A9o","KQo","KJo","QJo"],
       call:  [],
       // KTo: solo los 6 combos con al menos una espada van a raise
@@ -2375,8 +2376,9 @@ const RANGES_DATA = {
       raise: ["AA","KK"],
       push:  ["QQ","JJ","TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
-              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s","T8s","98s",
-              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQo","KJo","KTo","QJo"],
+              "KQs","KJs","KTs","K9s","K8s","K7s",
+              "QJs","QTs","Q9s","JTs","J9s","J8s","T9s","T8s","98s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","KQo","KJo","KTo","QJo"],
       call:  [],
       // QTo: solo los 3 combos con Q♠ van a raise
       comboOverrides: {
@@ -2387,10 +2389,11 @@ const RANGES_DATA = {
       raise: [],
       push:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
-              "KQs","KJs","KTs","K9s","K8s","K7s","K6s",
-              "QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s",
+              "QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","T7s",
+              "98s","97s","87s","86s","76s","65s",
               "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
-              "KQo","KJo","KTo","QJo","QTo","JTo"],
+              "KQo","KJo","KTo","K9o","QJo","QTo","JTo"],
       call:  []
     },
     "OR_BTN__t10":  {
@@ -2398,10 +2401,11 @@ const RANGES_DATA = {
       push:  ["TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
-              "QJs","QTs","Q9s","Q8s","Q7s","Q6s",
-              "JTs","J9s","J8s","J7s","T9s","T8s","T7s","98s","97s","87s","76s",
+              "QJs","QTs","Q9s","Q8s","Q7s","Q6s","Q5s",
+              "JTs","J9s","J8s","J7s","T9s","T8s","T7s",
+              "98s","97s","96s","87s","86s","76s","75s","65s","54s",
               "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
-              "KQo","KJo","KTo","K9o","QJo","QTo","JTo"],
+              "KQo","KJo","KTo","K9o","K8o","K7o","K6o","QJo","QTo","JTo"],
       call:  [],
       // Q9o: solo los 6 combos con al menos una espada van a raise
       comboOverrides: {
