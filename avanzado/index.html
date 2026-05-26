@@ -438,11 +438,43 @@
   .matrix-cell.call  { background: #3e8e5b; }
   .matrix-cell.push  { background: #c79a26; }
   .matrix-cell.fold  { background: #2a2a2a; color: #888; }
-  /* Frecuencia mixta: gradiente diagonal raise (rojo) / call (verde) */
-  .matrix-cell.mixed.raise {
+
+  /* Frecuencia mixta — gradiente diagonal entre la acción base y la del override.
+     Se aplican TRES clases simultáneas: la acción base (raise/call/push/fold),
+     "mixed", y "mixed-{accion del override}". El selector específico decide el
+     gradiente exacto. */
+
+  /* Base = FOLD (gris) + override raise: mitad ROJO / mitad GRIS */
+  .matrix-cell.fold.mixed.mixed-raise {
+    background: linear-gradient(135deg, #c23b3b 50%, #2a2a2a 50%);
+    color: #fff;
+  }
+  /* Base = FOLD (gris) + override push: mitad DORADO / mitad GRIS */
+  .matrix-cell.fold.mixed.mixed-push {
+    background: linear-gradient(135deg, #c79a26 50%, #2a2a2a 50%);
+    color: #fff;
+  }
+  /* Base = FOLD (gris) + override call: mitad VERDE / mitad GRIS */
+  .matrix-cell.fold.mixed.mixed-call {
+    background: linear-gradient(135deg, #3e8e5b 50%, #2a2a2a 50%);
+    color: #fff;
+  }
+
+  /* Base = RAISE (rojo) + override call: mitad ROJO / mitad VERDE
+     (clasica frecuencia mixta del cash: K8s/T8s/98s en 3b) */
+  .matrix-cell.raise.mixed.mixed-call {
     background: linear-gradient(135deg, #c23b3b 50%, #3e8e5b 50%);
   }
-  .matrix-cell.mixed.call {
+  /* Base = CALL (verde) + override raise */
+  .matrix-cell.call.mixed.mixed-raise {
+    background: linear-gradient(135deg, #3e8e5b 50%, #c23b3b 50%);
+  }
+
+  /* Compat: clases antiguas (sin sufijo mixed-*) por si quedan rangos legacy */
+  .matrix-cell.mixed.raise:not(.mixed-call):not(.mixed-raise):not(.mixed-push) {
+    background: linear-gradient(135deg, #c23b3b 50%, #3e8e5b 50%);
+  }
+  .matrix-cell.mixed.call:not(.mixed-call):not(.mixed-raise):not(.mixed-push) {
     background: linear-gradient(135deg, #3e8e5b 50%, #c23b3b 50%);
   }
   .matrix-cell.current {
@@ -2041,17 +2073,18 @@ function renderMatrix(range, currentHand, isBbRol = false) {
   matrix.innerHTML = '';
 
   // Detectar manos con frecuencia mixta: aquellas cuyo handKey tiene algún
-  // combo en __overrides con acción distinta a la base
-  const mixedHands = new Set();
+  // combo en __overrides con acción distinta a la base.
+  // Guardamos también la acción del override para colorear correctamente.
+  const mixedHands = new Map(); // label → acción del override (raise, push, call)
   if (range && range.__overrides) {
     for (const combo in range.__overrides) {
       const r1 = combo[0], s1 = combo[1], r2 = combo[2], s2 = combo[3];
       let lbl;
       if (r1 === r2) lbl = r1+r2;
       else lbl = r1+r2 + (s1===s2 ? 's' : 'o');
-      // Si la acción del override difiere de la base, es mano mixta
       const baseAction = range[lbl] || 'fold';
-      if (range.__overrides[combo] !== baseAction) mixedHands.add(lbl);
+      const ovrAction = range.__overrides[combo];
+      if (ovrAction !== baseAction) mixedHands.set(lbl, ovrAction);
     }
   }
 
@@ -2071,7 +2104,10 @@ function renderMatrix(range, currentHand, isBbRol = false) {
 
       const cell = document.createElement('div');
       let cls = 'matrix-cell ' + action;
-      if (mixedHands.has(label)) cls += ' mixed';
+      if (mixedHands.has(label)) {
+        // Añade clase mixed + acción del override (mixed-raise, mixed-push, mixed-call)
+        cls += ' mixed mixed-' + mixedHands.get(label);
+      }
       if (label === currentHand) cls += ' current';
       cell.className = cls;
       cell.textContent = label;
