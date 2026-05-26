@@ -306,6 +306,7 @@
   .act-btn.fold { border-color: var(--blue); color: #8fb3f2; }
   .act-btn.call { border-color: var(--green); color: #8fe6a8; }
   .act-btn.raise { border-color: var(--red); color: #f29c8c; }
+  .act-btn.push { border-color: #d4af37; color: #f0d878; background: rgba(212,175,55,.05); }
   .act-btn:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: 0 6px 14px rgba(0,0,0,.4);
@@ -313,6 +314,7 @@
   .act-btn.fold:hover:not(:disabled) { background: rgba(45,95,176,.15); }
   .act-btn.call:hover:not(:disabled) { background: rgba(62,142,91,.15); }
   .act-btn.raise:hover:not(:disabled) { background: rgba(194,59,34,.15); }
+  .act-btn.push:hover:not(:disabled) { background: rgba(212,175,55,.18); }
   .act-btn:disabled { opacity: .45; cursor: not-allowed; }
 
   /* ---------- PANEL DERECHO ---------- */
@@ -434,6 +436,7 @@
   }
   .matrix-cell.raise { background: #c23b3b; }
   .matrix-cell.call  { background: #3e8e5b; }
+  .matrix-cell.push  { background: #c79a26; }
   .matrix-cell.fold  { background: #2a2a2a; color: #888; }
   /* Frecuencia mixta: gradiente diagonal raise (rojo) / call (verde) */
   .matrix-cell.mixed.raise {
@@ -692,6 +695,7 @@
       <button class="act-btn fold" id="btnFold" data-action="fold">Fold</button>
       <button class="act-btn call" id="btnCall" data-action="call">Call</button>
       <button class="act-btn raise" id="btnRaise" data-action="raise">Raise</button>
+      <button class="act-btn push" id="btnPush" data-action="push" style="display:none">Push</button>
     </div>
   </div>
 
@@ -774,6 +778,10 @@
             <span class="code">50BB</span>
             <span class="desc">Stack medio</span>
           </div>
+          <div class="dropdown-item" data-stack="10" data-format-only="torneo">
+            <span class="code">10BB</span>
+            <span class="desc">Push/Fold (solo Torneo)</span>
+          </div>
         </div>
       </div>
     </div>
@@ -795,6 +803,7 @@
     <div class="matrix" id="matrix"></div>
     <div class="legend">
       <div class="legend-item"><div class="legend-swatch" style="background:#c23b3b"></div> Raise</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#c79a26"></div> Push</div>
       <div class="legend-item"><div class="legend-swatch" style="background:#3e8e5b"></div> Call</div>
       <div class="legend-item"><div class="legend-swatch" style="background:#2a2a2a"></div> Fold</div>
     </div>
@@ -879,10 +888,17 @@ const SEAT_COORDS = [
 /* ---------- CATÁLOGO DE TIPOS DE SPOT ---------- */
 // enabled: true → se puede seleccionar y tiene lógica implementada
 // enabled: false → aparece deshabilitado con "Próximamente"
+// Si el spot tiene contextCondition, la disponibilidad depende también
+// del formato y stack actuales (se evalúa dinámicamente)
 const SPOT_TYPES = [
-  { code: 'OR_ADV', desc: 'OR Avanzado (Open Raise Amp)',                enabled: true  },
-  { code: '3b',     desc: '3-bet vs Open',                              enabled: true  },
-  { code: 'OR',     desc: 'Open Raise',                                 enabled: false },
+  { code: 'OR_ADV', desc: 'OR Avanzado (Open Raise Amp)',                enabled: true,
+    // OR_ADV no aplica a Torneo 10bb (ahí se usa OR clásico push/fold)
+    contextCondition: () => !(selectedFormat === 'torneo' && String(selectedStack) === '10') },
+  { code: '3b',     desc: '3-bet vs Open',                              enabled: true,
+    contextCondition: () => !(selectedFormat === 'torneo' && String(selectedStack) === '10') },
+  { code: 'OR',     desc: 'Open Raise (Push/Fold 10bb)',                enabled: true,
+    // OR clásico SOLO disponible para Torneo 10bb
+    contextCondition: () => selectedFormat === 'torneo' && String(selectedStack) === '10' },
   { code: 'ROL',    desc: 'Raise Over Limp',                            enabled: false },
   { code: 'Sqz',    desc: 'Squeeze (OR + caller)',                      enabled: false },
   { code: 'C3b',    desc: 'Facing 3-bet (tras abrir)',                  enabled: false },
@@ -891,6 +907,82 @@ const SPOT_TYPES = [
   { code: 'Defend', desc: 'Defender BB vs Open',                        enabled: false },
   { code: 'CC',     desc: 'Cold Call (no-BB)',                          enabled: false }
 ];
+
+// Devuelve true si el spot está habilitado en el contexto actual
+function isSpotAvailable(spot) {
+  if (!spot.enabled) return false;
+  if (typeof spot.contextCondition === 'function') {
+    if (!spot.contextCondition()) return false;
+  }
+  // Comprobar si hay al menos un rango cargado para este spot+contexto
+  return countRangesForSpot(spot.code) > 0;
+}
+
+/* Devuelve true si el spot tiene rangos PARCIALES (no todos cargados).
+   Se usa para mostrar la etiqueta "Parcial" en el dropdown. */
+function isSpotPartial(spot) {
+  const total = totalExpectedRangesForSpot(spot.code);
+  const cargados = countRangesForSpot(spot.code);
+  return cargados > 0 && cargados < total;
+}
+
+/* Devuelve el número TOTAL de rangos que un spot debería tener (cargados o no).
+   Se usa para detectar si el spot está "parcial" o "completo". */
+function totalExpectedRangesForSpot(spotCode) {
+  if (spotCode === 'OR' || spotCode === 'OR_ADV') return 7;     // 7 posiciones (sin BB)
+  if (spotCode === '3b') return 10;                              // 10 escenarios
+  if (spotCode === 'ROL') return 6;                              // 6 escenarios
+  return 0;
+}
+
+/* Lista las base-keys que pertenecen al spot dado (sin sufijo de contexto). */
+function getBaseKeysForSpot(spotCode) {
+  const keys = [];
+  if (spotCode === 'OR' || spotCode === 'OR_ADV') {
+    const prefix = spotCode + '_';
+    ['UTG','UTG1','LJ','HJ','CO','BTN','SB'].forEach(p => keys.push(prefix + p));
+  } else if (spotCode === '3b') {
+    // Tomamos las keys conocidas de _3B_SCENARIOS si está disponible
+    if (typeof _3B_SCENARIOS !== 'undefined') {
+      _3B_SCENARIOS.forEach(s => keys.push(s.rangeKey));
+    }
+  } else if (spotCode === 'ROL') {
+    if (typeof ROL_SCENARIOS !== 'undefined') {
+      ROL_SCENARIOS.forEach(s => keys.push(s.rangeKey));
+    }
+  }
+  return keys;
+}
+
+/* Cuenta cuántos rangos (de los esperados) tienen contenido en el contexto
+   actual. Usa resolveRange para considerar fallbacks. */
+function countRangesForSpot(spotCode) {
+  if (typeof RANGES === 'undefined') return 1; // antes de init, asumir OK
+  const baseKeys = getBaseKeysForSpot(spotCode);
+  let count = 0;
+  for (const baseKey of baseKeys) {
+    const r = resolveRange(baseKey);
+    if (r && Object.keys(r).length > 0) count++;
+  }
+  return count;
+}
+
+/* Cuenta TODOS los rangos cargados (de cualquier spot) en un contexto
+   formato+stack concreto. Se usa para deshabilitar opciones de stack
+   sin ningún rango disponible. */
+function countRangesForContext(format, stack) {
+  if (typeof RANGES === 'undefined') return 1;
+  // Backup contexto actual
+  const savedFmt = selectedFormat, savedStk = selectedStack;
+  selectedFormat = format; selectedStack = stack;
+  let count = 0;
+  ['OR','OR_ADV','3b','ROL'].forEach(spotCode => {
+    count += countRangesForSpot(spotCode);
+  });
+  // Restaurar
+  selectedFormat = savedFmt; selectedStack = savedStk;
+  return count;
+}
 let selectedSpot = 'OR_ADV'; // por defecto en modo avanzado
 // Formato de juego (cash | torneo) — afecta etiquetado y futuros rangos específicos
 let selectedFormat = 'cash';
@@ -1184,13 +1276,25 @@ function buildSpotDropdown() {
   menu.innerHTML = '';
   SPOT_TYPES.forEach(spot => {
     const item = document.createElement('div');
-    item.className = 'dropdown-item' + (spot.enabled ? '' : ' disabled') + (spot.code === selectedSpot ? ' active' : '');
+    const available = isSpotAvailable(spot);
+    const partial = available && isSpotPartial(spot);
+    item.className = 'dropdown-item' + (available ? '' : ' disabled') + (spot.code === selectedSpot ? ' active' : '');
     item.dataset.code = spot.code;
+    let descText;
+    if (!available) {
+      descText = spot.enabled ? 'Sin rangos en este contexto' : 'Próximamente';
+    } else if (partial) {
+      const loaded = countRangesForSpot(spot.code);
+      const total = totalExpectedRangesForSpot(spot.code);
+      descText = spot.desc + ' · Parcial (' + loaded + '/' + total + ')';
+    } else {
+      descText = spot.desc;
+    }
     item.innerHTML = `
       <span class="code">${spot.code}</span>
-      <span class="desc">${spot.enabled ? spot.desc : 'Próximamente'}</span>
+      <span class="desc">${descText}</span>
     `;
-    if (spot.enabled) {
+    if (available) {
       item.addEventListener('click', () => {
         selectedSpot = spot.code;
         document.getElementById('spotCurrent').textContent = spot.code;
@@ -1216,6 +1320,23 @@ function buildSpotDropdown() {
   });
 }
 
+/* Reconstruye el dropdown de spot cuando cambia el contexto (formato/stack).
+   Si el spot seleccionado ya no está disponible, lo cambia a uno disponible. */
+function refreshSpotForContext() {
+  // Si el spot actual ya no está disponible, buscar uno que sí lo esté
+  const currentSpot = SPOT_TYPES.find(s => s.code === selectedSpot);
+  if (currentSpot && !isSpotAvailable(currentSpot)) {
+    const fallback = SPOT_TYPES.find(s => isSpotAvailable(s));
+    if (fallback) {
+      selectedSpot = fallback.code;
+      document.getElementById('spotCurrent').textContent = fallback.code;
+    }
+  }
+  // Reconstruir el dropdown para reflejar los nuevos estados
+  buildSpotDropdown();
+  refreshVillainVisibility();
+}
+
 /* ---------- DROPDOWN DE FORMATO (Cash / Torneo) ---------- */
 function buildFormatDropdown() {
   const menu = document.getElementById('formatMenu');
@@ -1234,6 +1355,10 @@ function buildFormatDropdown() {
       menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
       item.classList.add('active');
       wrap.classList.remove('open');
+      // Refrescar visibilidad de opciones de stack según formato
+      refreshStackVisibility();
+      // Refrescar disponibilidad de spots según contexto
+      refreshSpotForContext();
     });
   });
 
@@ -1246,24 +1371,84 @@ function buildFormatDropdown() {
   });
 }
 
-/* ---------- DROPDOWN DE STACK (50bb / 100bb) ---------- */
+/* Refresca visibilidad y disponibilidad de las opciones de stack según
+   el formato actual y los rangos cargados. Reglas:
+   - Si data-format-only no coincide con el formato actual, OCULTAR la opción
+   - Si no hay ningún rango cargado para ese stack en el formato actual, DESHABILITAR
+   - Si el stack actual queda inválido (oculto o deshabilitado), resetear a uno válido */
+function refreshStackVisibility() {
+  const menu = document.getElementById('stackMenu');
+  const label = document.getElementById('stackCurrent');
+  let needsReset = false;
+  menu.querySelectorAll('.dropdown-item').forEach(item => {
+    const restrict = item.dataset.formatOnly; // ej: "torneo"
+    const stack = item.dataset.stack;
+    // 1) Restricción dura por formato (ej: 10bb solo torneo)
+    if (restrict && restrict !== selectedFormat) {
+      item.style.display = 'none';
+      if (stack === selectedStack) needsReset = true;
+      return;
+    }
+    item.style.display = '';
+    // 2) Disponibilidad: ¿hay algún rango cargado en ese contexto?
+    const hasRanges = countRangesForContext(selectedFormat, stack) > 0;
+    if (hasRanges) {
+      item.classList.remove('disabled');
+      // Actualizar descripción a la versión normal
+      const desc = item.querySelector('.desc');
+      if (desc && desc.dataset.origDesc) desc.textContent = desc.dataset.origDesc;
+    } else {
+      item.classList.add('disabled');
+      const desc = item.querySelector('.desc');
+      if (desc) {
+        if (!desc.dataset.origDesc) desc.dataset.origDesc = desc.textContent;
+        desc.textContent = 'Sin rangos cargados';
+      }
+      // Si está seleccionado, hay que resetearlo
+      if (stack === selectedStack) needsReset = true;
+    }
+  });
+  if (needsReset) {
+    // Buscar el primer stack disponible (no disabled y no oculto)
+    let fallback = null;
+    menu.querySelectorAll('.dropdown-item').forEach(item => {
+      if (fallback) return;
+      if (item.style.display === 'none') return;
+      if (item.classList.contains('disabled')) return;
+      fallback = item.dataset.stack;
+    });
+    if (fallback) {
+      selectedStack = fallback;
+      label.textContent = fallback + 'bb';
+      menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
+      const def = menu.querySelector('[data-stack="' + fallback + '"]');
+      if (def) def.classList.add('active');
+    }
+  }
+}
+
+/* ---------- DROPDOWN DE STACK (50bb / 100bb / 10bb) ---------- */
 function buildStackDropdown() {
   const menu = document.getElementById('stackMenu');
   const btn  = document.getElementById('stackDropdownBtn');
   const wrap = document.getElementById('stackDropdown');
   const label = document.getElementById('stackCurrent');
 
-  // Estado inicial
+  // Estado inicial: aplicar visibilidad según formato actual
+  refreshStackVisibility();
+
   menu.querySelectorAll('.dropdown-item').forEach(item => {
     if (item.dataset.stack === selectedStack) item.classList.add('active');
     item.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (item.classList.contains('disabled')) return; // 50bb está bloqueado
+      if (item.classList.contains('disabled')) return;
       selectedStack = item.dataset.stack;
       label.textContent = selectedStack + 'bb';
       menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
       item.classList.add('active');
       wrap.classList.remove('open');
+      // Refrescar disponibilidad de spots según contexto
+      refreshSpotForContext();
     });
   });
 
@@ -1342,7 +1527,7 @@ function dealCardsForHand(handKeyStr) {
  */
 function pickBiasedHand(range) {
   // Clasificar todas las 169 manos según acción
-  const byAction = { raise: [], call: [], fold: [] };
+  const byAction = { raise: [], call: [], push: [], fold: [] };
   RANKS.forEach((r1, i) => {
     RANKS.forEach((r2, j) => {
       let label;
@@ -1360,16 +1545,20 @@ function pickBiasedHand(range) {
   if (roll < FOLD_PERCENTAGE) {
     chosenAction = 'fold';
   } else {
-    // 60% restante repartido entre raise y call (proporcionalmente según cuántas hay)
-    const hasRaise = byAction.raise.length > 0;
-    const hasCall  = byAction.call.length > 0;
-    if (hasRaise && hasCall) {
-      // Repartir proporcional: si hay 30 raise y 10 call, el 75% de las no-fold irá a raise
-      const total = byAction.raise.length + byAction.call.length;
-      chosenAction = Math.random() * total < byAction.raise.length ? 'raise' : 'call';
-    } else if (hasRaise) chosenAction = 'raise';
-    else if (hasCall) chosenAction = 'call';
-    else chosenAction = 'fold'; // fallback: rango vacío
+    // Resto repartido entre raise/call/push proporcionalmente
+    const actions = ['raise', 'call', 'push'].filter(a => byAction[a].length > 0);
+    if (actions.length === 0) {
+      chosenAction = 'fold';
+    } else {
+      // Reparto proporcional al número de manos disponibles en cada acción
+      const total = actions.reduce((s, a) => s + byAction[a].length, 0);
+      let r = Math.random() * total;
+      for (const a of actions) {
+        r -= byAction[a].length;
+        if (r < 0) { chosenAction = a; break; }
+      }
+      if (!chosenAction) chosenAction = actions[actions.length - 1];
+    }
   }
 
   // Si la categoría elegida está vacía, caer al fold (siempre habrá folds)
@@ -1595,8 +1784,8 @@ function renderTable() {
           </div>`).join('')
       : `<div class="card back"></div><div class="card back"></div>`;
 
-    // Stack (100bb base, descontando lo apostado)
-    let stack = 100;
+    // Stack base según el stack seleccionado en el panel (descontando lo apostado)
+    let stack = parseFloat(selectedStack) || 100;
     if (pos === 'SB') stack -= 0.5;
     if (pos === 'BB') stack -= 1;
     if (isVillain && sc.spotType === '3b') stack -= 3;
@@ -1694,6 +1883,7 @@ function configureButtonsForScenario() {
   const btnFold  = document.getElementById('btnFold');
   const btnCall  = document.getElementById('btnCall');
   const btnRaise = document.getElementById('btnRaise');
+  const btnPush  = document.getElementById('btnPush');
 
   // Reset a estado normal
   btnFold.textContent = 'Fold';
@@ -1702,7 +1892,11 @@ function configureButtonsForScenario() {
   btnFold.disabled = false;
   btnCall.disabled = false;
   btnRaise.disabled = false;
+  btnPush.disabled = false;
   btnFold.classList.remove('disabled-perma');
+  btnCall.classList.remove('disabled-perma');
+  btnCall.style.display = '';
+  btnPush.style.display = 'none';   // Push oculto por defecto
 
   if (!sc) return;
 
@@ -1712,6 +1906,20 @@ function configureButtonsForScenario() {
     btnCall.textContent = 'Check';
     btnFold.disabled = true;
     btnFold.classList.add('disabled-perma');
+  }
+
+  // Modo Push/Fold/Raise: OR a 10bb (solo en Torneo).
+  // Acciones disponibles según posición:
+  //   - SB: Fold | Call (limp/complete) | Raise (mini-raise 2-2.5bb) | Push (all-in)
+  //   - Resto (UTG..BTN): Fold | Raise | Push (sin call, no hay con quién igualar)
+  if (sc.spotType === 'OR' && String(selectedStack) === '10') {
+    btnPush.style.display = '';
+    if (sc.heroPos === 'SB') {
+      // En SB el call es limp/complete (poner 0.5bb más para igualar la BB)
+      btnCall.textContent = 'Call';
+    } else {
+      btnCall.style.display = 'none';
+    }
   }
 }
 
@@ -1774,7 +1982,10 @@ function showFeedback(userAction, correctAction, isOk) {
 
   // En spots BB/ROL, "call" se muestra como "CHECK" en el feedback
   const isBbRol = sc.spotType === 'ROL' && sc.heroPos === 'BB';
-  const displayAction = (a) => (isBbRol && a === 'call') ? 'CHECK' : a.toUpperCase();
+  const displayAction = (a) => {
+    if (isBbRol && a === 'call') return 'CHECK';
+    return a.toUpperCase();
+  };
 
   // Detectar si esta mano tiene frecuencia mixta (overrides por combo)
   const hasOverrides = sc.range && sc.range.__overrides;
@@ -2082,6 +2293,104 @@ const RANGES_DATA = {
       call: []
     },
 
+    /* ---------- OR Torneo 10bb — Push/Fold (sufijo __t10) ----------
+       Placeholders. Solo se cargan rangos de PUSH (la categor\u00eda "raise"
+       internamente representa el push all-in). El bot\u00f3n CALL se oculta
+       autom\u00e1ticamente en estos rangos por la l\u00f3gica del trainer.
+       BB no aplica (no abre).
+    */
+    "OR_UTG__t10":  {
+      raise: ["AA","KK","QQ"],
+      push:  ["JJ","TT","99","88","77","66","55","44",
+              "AKs","AQs","AJs","ATs","A9s","A8s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "AKo","AQo","AJo","ATo","KQo"],
+      call:  [],
+      // KJo: solo los 6 combos con al menos una espada van a raise (los otros 6 a fold)
+      comboOverrides: {
+        "KJo": { raise: ["KsJh","KsJd","KsJc","KhJs","KdJs","KcJs"] }
+      }
+    },
+    "OR_UTG1__t10": {
+      raise: ["AA","KK","QQ"],
+      push:  ["JJ","TT","99","88","77","66","55","44","33",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "AKo","AQo","AJo","ATo","KQo","KJo"],
+      call:  [],
+      // A9o: solo los 6 combos con al menos una espada van a raise
+      comboOverrides: {
+        "A9o": { raise: ["As9h","As9d","As9c","Ah9s","Ad9s","Ac9s"] }
+      }
+    },
+    "OR_LJ__t10":   {
+      raise: ["AA","KK","QQ"],
+      push:  ["JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
+              "AKo","AQo","AJo","ATo","A9o","KQo","KJo","QJo"],
+      call:  [],
+      // KTo: solo los 6 combos con al menos una espada van a raise
+      comboOverrides: {
+        "KTo": { raise: ["KsTh","KsTd","KsTc","KhTs","KdTs","KcTs"] }
+      }
+    },
+    "OR_HJ__t10":   {
+      raise: ["AA","KK"],
+      push:  ["QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s","T8s","98s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQo","KJo","KTo","QJo"],
+      call:  [],
+      // QTo: solo los 3 combos con Q♠ van a raise
+      comboOverrides: {
+        "QTo": { raise: ["QsTh","QsTd","QsTc"] }
+      }
+    },
+    "OR_CO__t10":   {
+      raise: [],
+      push:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s",
+              "QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
+              "KQo","KJo","KTo","QJo","QTo","JTo"],
+      call:  []
+    },
+    "OR_BTN__t10":  {
+      raise: ["AA","KK","QQ","JJ","K9s"],
+      push:  ["TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QJs","QTs","Q9s","Q8s","Q7s","Q6s",
+              "JTs","J9s","J8s","J7s","T9s","T8s","T7s","98s","97s","87s","76s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
+              "KQo","KJo","KTo","K9o","QJo","QTo","JTo"],
+      call:  [],
+      // Q9o: solo los 6 combos con al menos una espada van a raise
+      comboOverrides: {
+        "Q9o": { raise: ["Qs9h","Qs9d","Qs9c","Qh9s","Qd9s","Qc9s"] }
+      }
+    },
+    "OR_SB__t10":   {
+      raise: [],
+      push:  ["TT","99","88","77","66","55","44","33","22",
+              "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QJs","QTs","Q9s","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
+              "JTs","J9s","J8s","J7s","J6s","J5s","J4s","J3s","J2s",
+              "T9s","T8s","T7s","T6s","T5s","T4s","T3s","T2s",
+              "98s","97s","96s","95s","94s","87s","86s","85s","84s",
+              "76s","75s","74s","65s","64s","63s","54s","53s","43s",
+              "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
+              "KQo","KJo","KTo","K9o","K8o","K7o","K6o","K5o","K4o","K3o","K2o",
+              "QJo","QTo","Q9o","Q8o","Q7o","Q6o","Q5o",
+              "JTo","J9o","J8o","J7o","T9o","T8o","T7o","98o","97o","87o"],
+      call:  ["AA","KK","QQ","JJ",
+              "93s","92s","83s","82s","73s","52s","42s",
+              "Q4o","Q3o","Q2o","J6o","J5o","J4o","J3o","T6o","96o","86o","76o"]
+    },
+
     /* ---------- OR Avanzado (rangos de apertura m\u00e1s amplios) ----------
        Placeholders vac\u00edos. Cuando pases las capturas, los llenamos con los
        rangos oficiales para cada posici\u00f3n.
@@ -2333,10 +2642,13 @@ const RANGES_DATA = {
     /* ---------- 3b (3-bet vs Open) — 10 escenarios agrupados por zona ---------- */
     // Rangos OOP (Hero fuera de posición)
     "3b_SB_vs_EP": {
-      raise: ["AA","KK","QQ","JJ",
-              "AKs","AQs","AJs","ATs","KQs","KJs","QJs","JTs",
+      raise: ["AA","KK","QQ",
+              "AKs","AQs","KQs","KJs","KTs","JTs",
               "AKo"],
-      call:  ["TT","99","88","77","A5s","KTs","QTs"]
+      call:  ["JJ","TT","99","88","77","66","55","44","33","22",
+              "AJs","ATs","A9s","A8s","A7s","A5s","A4s","A3s",
+              "QTs","J9s","T9s","76s","65s","54s",
+              "AQo"]
     },
     "3b_SB_vs_MP": {
       raise: ["AA","KK","QQ","JJ","TT","99",
@@ -2375,12 +2687,12 @@ const RANGES_DATA = {
     },
     "3b_BB_vs_LP": {
       raise: ["AA","KK","QQ","JJ","TT","99",
-              "AKs","AQs","AJs","A5s","A4s","KQs","KJs","KTs","K9s","K8s","Q9s",
+              "AKs","AQs","AJs","A5s","A4s","KTs","K9s","K8s","Q9s",
               "JTs","J9s","T9s","T8s","98s","87s","76s","65s","54s",
               "AKo","AQo","AJo","KQo"],
       call:  ["88","77","66","55","44","33","22",
               "ATs","A9s","A8s","A7s","A6s","A3s","A2s",
-              "K7s","K6s","K5s","K4s","K3s","K2s",
+              "KQs","KJs","K7s","K6s","K5s","K4s","K3s","K2s",
               "QJs","QTs","Q8s","Q7s","Q6s","Q5s","Q4s","Q3s","Q2s",
               "J8s","J7s","J6s","J5s","J4s","J3s","J2s",
               "T7s","T6s","T5s","97s","96s","95s","86s","85s","75s","74s","64s","63s",
@@ -2555,6 +2867,7 @@ const RANGES = (function compileRanges() {
     const compiled = {};
     (spec.raise || []).forEach(h => compiled[h] = "raise");
     (spec.call  || []).forEach(h => compiled[h] = "call");
+    (spec.push  || []).forEach(h => compiled[h] = "push");
     out[key] = compiled;
     // Adjuntar overrides si existen (comboKey -> action). Se accede como
     // RANGES[key].__overrides en getActionForCombo. No es enumerable para
@@ -2594,26 +2907,36 @@ function normalizeComboKey(combo) {
 }
 
 /* Resuelve el rango a usar según el formato y stack actuales.
-   Estrategia de búsqueda (en este orden):
-   1. {baseKey}__{formato}{stack}  (ej: OR_ADV_UTG__c50, OR_ADV_UTG__t100)
-   2. {baseKey}__{stack}            (ej: OR_ADV_UTG__50 — si no varía por formato)
-   3. {baseKey}                     (ej: OR_ADV_UTG — fallback al rango por defecto Cash 100bb)
+   Reglas de búsqueda:
+   - Cash 100bb (default): usa la key base ej "OR_ADV_UTG"
+   - Otros contextos: busca {baseKey}__{c|t}{stack} (ej: OR_ADV_UTG__c50)
+   - Cash con otro stack: si no hay variante específica, hace fallback al base de Cash 100bb
+   - Torneo (cualquier stack): NO hace fallback al rango base de Cash. Si no hay
+     variante específica para torneo, devuelve null (el spot se deshabilita).
    Un rango se considera "no cargado" si tiene 0 entradas (placeholder vacío).
 */
 function resolveRange(baseKey) {
   if (!baseKey) return null;
   const formatCode = selectedFormat === 'cash' ? 'c' : 't';
   const stack = selectedStack;
-  const candidates = [
-    baseKey + '__' + formatCode + stack,  // ej: OR_ADV_UTG__c50
-    baseKey + '__' + stack,               // ej: OR_ADV_UTG__50 (compartido entre cash/torneo)
-    baseKey                                // fallback genérico
-  ];
-  for (const k of candidates) {
-    const r = RANGES[k];
-    // Solo aceptar rangos con al menos una mano (los placeholders vacíos se saltan)
-    if (r && Object.keys(r).length > 0) return r;
+  const isDefaultContext = (selectedFormat === 'cash' && stack === '100');
+
+  if (isDefaultContext) {
+    const r = RANGES[baseKey];
+    return (r && Object.keys(r).length > 0) ? r : null;
   }
+
+  // Contexto no-default: primero buscar variante específica
+  const specific = RANGES[baseKey + '__' + formatCode + stack];
+  if (specific && Object.keys(specific).length > 0) return specific;
+
+  // Si estamos en CASH (50bb por ejemplo), hacer fallback al base Cash 100bb
+  if (selectedFormat === 'cash') {
+    const base = RANGES[baseKey];
+    if (base && Object.keys(base).length > 0) return base;
+  }
+
+  // En TORNEO no hay fallback al Cash. Devolver null.
   return null;
 }
 
@@ -2648,6 +2971,7 @@ function buildRange(spec) {
   const out = {};
   (spec.raise || []).forEach(h => out[h] = 'raise');
   (spec.call  || []).forEach(h => out[h] = 'call');
+  (spec.push  || []).forEach(h => out[h] = 'push');
   return out;
 }
 
