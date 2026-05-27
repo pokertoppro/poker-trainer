@@ -285,15 +285,17 @@
   .actions-bar {
     margin-top: 20px;
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    /* auto-fit reparte el espacio según los botones visibles (3 o 4) */
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
     gap: 12px;
   }
   .act-btn {
     font-family: 'Cinzel', serif;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
-    letter-spacing: 2px;
-    padding: 16px 8px;
+    letter-spacing: 1.5px;
+    padding: 14px 6px;
     border: 2px solid;
     border-radius: 10px;
     background: transparent;
@@ -1338,6 +1340,16 @@ function buildSpotDropdown() {
         menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
         item.classList.add('active');
         wrap.classList.remove('open');
+        // En Torneo, auto-ajustar el stack según el spot elegido:
+        //   - OR  → 10bb (push/fold puro)
+        //   - 3b  → 20bb (con 3b 5bb y 3b push)
+        if (selectedFormat === 'torneo') {
+          if (spot.code === 'OR' && selectedStack !== '10') {
+            setStackTo('10');
+          } else if (spot.code === '3b' && selectedStack !== '20') {
+            setStackTo('20');
+          }
+        }
         // Mostrar/ocultar dropdown de villano según el nuevo spot
         refreshVillainVisibility();
       });
@@ -1392,7 +1404,13 @@ function buildFormatDropdown() {
       item.classList.add('active');
       wrap.classList.remove('open');
       // Refrescar visibilidad de opciones de stack según formato
+      // (puede cambiar selectedStack si el actual ya no es válido)
       refreshStackVisibility();
+      // En Torneo, sincronizar el spot con el stack auto-seleccionado
+      if (selectedFormat === 'torneo') {
+        if (selectedStack === '10') setSpotTo('OR');
+        else if (selectedStack === '20') setSpotTo('3b');
+      }
       // Refrescar disponibilidad de spots según contexto
       refreshSpotForContext();
     });
@@ -1471,6 +1489,29 @@ function refreshStackVisibility() {
   }
 }
 
+/* Cambia el stack seleccionado programáticamente (actualizando UI). */
+function setStackTo(stack) {
+  const menu = document.getElementById('stackMenu');
+  const label = document.getElementById('stackCurrent');
+  const item = menu.querySelector('[data-stack="' + stack + '"]');
+  if (!item) return;
+  selectedStack = stack;
+  label.textContent = stack + 'bb';
+  menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
+  item.classList.add('active');
+}
+
+/* Cambia el spot seleccionado programáticamente (actualizando UI).
+   Reconstruye el dropdown para reflejar el nuevo estado activo. */
+function setSpotTo(spotCode) {
+  const target = SPOT_TYPES.find(s => s.code === spotCode);
+  if (!target || !isSpotAvailable(target)) return;
+  selectedSpot = spotCode;
+  document.getElementById('spotCurrent').textContent = spotCode;
+  buildSpotDropdown();
+  refreshVillainVisibility();
+}
+
 /* ---------- DROPDOWN DE STACK (50bb / 100bb / 10bb) ---------- */
 function buildStackDropdown() {
   const menu = document.getElementById('stackMenu');
@@ -1491,6 +1532,16 @@ function buildStackDropdown() {
       menu.querySelectorAll('.dropdown-item').forEach(x => x.classList.remove('active'));
       item.classList.add('active');
       wrap.classList.remove('open');
+      // En Torneo, auto-ajustar el spot según el stack elegido:
+      //   - 10bb → OR (push/fold puro)
+      //   - 20bb → 3b
+      if (selectedFormat === 'torneo') {
+        if (selectedStack === '10' && selectedSpot !== 'OR') {
+          setSpotTo('OR');
+        } else if (selectedStack === '20' && selectedSpot !== '3b') {
+          setSpotTo('3b');
+        }
+      }
       // Refrescar disponibilidad de spots según contexto
       refreshSpotForContext();
     });
@@ -1954,10 +2005,11 @@ function configureButtonsForScenario() {
 
   // Modo Push/Fold/Raise: OR a 10bb (solo en Torneo).
   // Acciones disponibles según posición:
-  //   - SB: Fold | Call (limp/complete) | Raise (mini-raise 2-2.5bb) | Push (all-in)
-  //   - Resto (UTG..BTN): Fold | Raise | Push (sin call, no hay con quién igualar)
+  //   - SB: Fold | Call (limp/complete) | Raise (mini-raise 2bb) | Push (all-in)
+  //   - Resto (UTG..BTN): Fold | Raise (2bb) | Push (sin call, no hay con quién igualar)
   if (sc.spotType === 'OR' && String(selectedStack) === '10') {
     btnPush.style.display = '';
+    btnRaise.textContent = '2bb';
     if (sc.heroPos === 'SB') {
       // En SB el call es limp/complete (poner 0.5bb más para igualar la BB)
       btnCall.textContent = 'Call';
@@ -1966,10 +2018,10 @@ function configureButtonsForScenario() {
     }
   }
 
-  // Modo 3-bet Torneo 20bb: 4 acciones — Fold | Call | 3b 5bb | 3b Push
+  // Modo 3-bet Torneo 20bb: 4 acciones — Fold | Call | 5bb | 3b Push
   if (sc.spotType === '3b' && String(selectedStack) === '20') {
     btnPush.style.display = '';
-    btnRaise.textContent = '3b 5bb';
+    btnRaise.textContent = '5bb';
     btnPush.textContent = '3b Push';
   }
 }
@@ -2033,12 +2085,15 @@ function showFeedback(userAction, correctAction, isOk) {
 
   // En spots BB/ROL, "call" se muestra como "CHECK" en el feedback
   const isBbRol = sc.spotType === 'ROL' && sc.heroPos === 'BB';
-  // En 3b Torneo 20bb, raise=3b 5bb y push=3b Push
+  // En 3b Torneo 20bb, raise=5bb y push=3b Push
   const is3bT20 = sc.spotType === '3b' && String(selectedStack) === '20';
+  // En OR Torneo 10bb, raise=2bb
+  const isOR10 = sc.spotType === 'OR' && String(selectedStack) === '10';
   const displayAction = (a) => {
     if (isBbRol && a === 'call') return 'CHECK';
-    if (is3bT20 && a === 'raise') return '3B 5BB';
+    if (is3bT20 && a === 'raise') return '5BB';
     if (is3bT20 && a === 'push') return '3B PUSH';
+    if (isOR10 && a === 'raise') return '2BB';
     return a.toUpperCase();
   };
 
