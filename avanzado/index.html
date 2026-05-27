@@ -1445,14 +1445,22 @@ function refreshStackVisibility() {
     }
   });
   if (needsReset) {
-    // Buscar el primer stack disponible (no disabled y no oculto)
+    // Buscar el primer stack disponible (no disabled y no oculto).
+    // Prioridad: si hay rangos cargados específicamente para este formato,
+    // preferimos los stacks "torneo-only" (20, 10) antes que los compartidos (100, 50).
+    // Esto evita que al pasar a Torneo se elija 100bb antes que 10bb.
+    const stacksPriority = selectedFormat === 'torneo'
+      ? ['10', '20', '50', '100']  // En torneo: 10 primero, luego 20
+      : ['100', '50', '20', '10']; // En cash: 100 primero
     let fallback = null;
-    menu.querySelectorAll('.dropdown-item').forEach(item => {
-      if (fallback) return;
-      if (item.style.display === 'none') return;
-      if (item.classList.contains('disabled')) return;
-      fallback = item.dataset.stack;
-    });
+    for (const preferredStack of stacksPriority) {
+      const item = menu.querySelector('[data-stack="' + preferredStack + '"]');
+      if (!item) continue;
+      if (item.style.display === 'none') continue;
+      if (item.classList.contains('disabled')) continue;
+      fallback = preferredStack;
+      break;
+    }
     if (fallback) {
       selectedStack = fallback;
       label.textContent = fallback + 'bb';
