@@ -1887,7 +1887,16 @@ function renderTable() {
 
   // Calcular pot
   let pot = 1.5; // SB(0.5) + BB(1)
-  if (sc.spotType === '3b') pot += 3; // villano abrió 3bb
+  // Tama\u00f1o del open raise (OR): 2bb en torneo, 3bb en cash
+  const orSize = (selectedFormat === 'torneo') ? 2 : 3;
+  if (sc.spotType === '3b') pot += orSize; // villano abri\u00f3
+  if (sc.spotType === '4b') {
+    // Hero abri\u00f3 (orSize) y villano hizo 3b a 7bb
+    pot += orSize + 7;
+    // Si el villano es un Blind, ya pag\u00f3 la ciega; restar lo que ya pusieron
+    if (sc.villainPos === 'SB') pot -= 0.5;
+    if (sc.villainPos === 'BB') pot -= 1;
+  }
   if (sc.spotType === 'ROL') {
     // Cada limper pone 1bb, pero si el limper ES la BB, ya pagó ese 1bb (no suma extra)
     limpersSet.forEach(lp => {
@@ -1903,6 +1912,13 @@ function renderTable() {
     for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
   } else if (sc.spotType === '3b') {
     for (let i = 0; i < heroIdx; i++) {
+      const p = POSITIONS[i];
+      if (p !== sc.villainPos) foldedPositions.add(p);
+    }
+  } else if (sc.spotType === '4b') {
+    // Hero abri\u00f3, todos los anteriores foldearon. Posteriores al Hero foldearon excepto el villano.
+    for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
+    for (let i = heroIdx + 1; i < POSITIONS.length; i++) {
       const p = POSITIONS[i];
       if (p !== sc.villainPos) foldedPositions.add(p);
     }
@@ -1937,11 +1953,27 @@ function renderTable() {
           </div>`).join('')
       : `<div class="card back"></div><div class="card back"></div>`;
 
-    // Stack base según el stack seleccionado en el panel (descontando lo apostado)
+    // Stack base seg\u00fan el stack seleccionado en el panel (descontando lo apostado)
     let stack = parseFloat(selectedStack) || 100;
     if (pos === 'SB') stack -= 0.5;
     if (pos === 'BB') stack -= 1;
-    if (isVillain && sc.spotType === '3b') stack -= 3;
+    if (isVillain && sc.spotType === '3b') {
+      // Villano abri\u00f3: si era Blind, descontar solo lo que falta tras la ciega
+      if (pos === 'SB') stack -= (orSize - 0.5);
+      else if (pos === 'BB') stack -= (orSize - 1);
+      else stack -= orSize;
+    }
+    // En 4b: Hero apost\u00f3 orSize (open), villano apost\u00f3 7bb (3b). Si villano es Blind,
+    // la ciega ya descontada arriba se compensa porque el 3b absorbe el coste total.
+    if (sc.spotType === '4b') {
+      if (isHero) stack -= orSize;
+      if (isVillain) {
+        // El villano apost\u00f3 7bb totales; si era Blind, descontar solo lo que falta tras la ciega
+        if (pos === 'SB') stack -= (7 - 0.5);
+        else if (pos === 'BB') stack -= (7 - 1);
+        else stack -= 7;
+      }
+    }
     if (isLimper && sc.spotType === 'ROL') {
       // Si es limper y no era ya la BB, paga para llegar a 1bb
       if (pos === 'BB') { /* ya pagó */ }
@@ -1964,7 +1996,12 @@ function renderTable() {
     let chipClass = 'chip';
     if (pos === 'SB') { chipAmount = 0.5; chipClass = 'chip blind-sb'; }
     if (pos === 'BB') { chipAmount = 1; chipClass = 'chip blind-bb'; }
-    if (isVillain && sc.spotType === '3b') { chipAmount = 3; chipClass = 'chip raise'; }
+    if (isVillain && sc.spotType === '3b') { chipAmount = orSize; chipClass = 'chip raise'; }
+    // En 4b: Hero abri\u00f3 a orSize bb, villano hizo 3b a 7bb (sobrescribe la ciega si aplica)
+    if (sc.spotType === '4b') {
+      if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
+      if (isVillain) { chipAmount = 7; chipClass = 'chip raise'; }
+    }
     // En ROL, los limpers muestran chip 1bb con el mismo estilo rojo que la BB
     if (isLimper && sc.spotType === 'ROL') {
       chipAmount = 1;
