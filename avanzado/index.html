@@ -2532,9 +2532,11 @@ const RANGES_DATA = {
               "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
               "AKo","AQo","AJo","ATo","KQo"],
       call:  [],
-      // KJo: solo los 6 combos con al menos una espada van a raise (los otros 6 a fold)
+      // KJo: solo los 3 combos con K\u2660 van a raise (los otros 9 a fold)
+      // A9o: solo los 3 combos con A\u2660 van a raise (los otros 9 a fold)
       comboOverrides: {
-        "KJo": { raise: ["KsJh","KsJd","KsJc","KhJs","KdJs","KcJs"] }
+        "KJo": { raise: ["KsJh","KsJd","KsJc"] },
+        "A9o": { raise: ["As9h","As9d","As9c"] }
       }
     },
     "OR_UTG1__t10": {
@@ -2544,9 +2546,11 @@ const RANGES_DATA = {
               "KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s",
               "AKo","AQo","AJo","ATo","KQo","KJo"],
       call:  [],
-      // A9o: solo los 6 combos con al menos una espada van a raise
+      // KJo: solo los 3 combos con K\u2660 van a raise (los otros 9 quedan en push por base)
+      // A9o: solo los 3 combos con A\u2660 van a raise (los otros 9 a fold)
       comboOverrides: {
-        "A9o": { raise: ["As9h","As9d","As9c","Ah9s","Ad9s","Ac9s"] }
+        "KJo": { raise: ["KsJh","KsJd","KsJc"] },
+        "A9o": { raise: ["As9h","As9d","As9c"] }
       }
     },
     "OR_LJ__t10":   {
@@ -2576,15 +2580,19 @@ const RANGES_DATA = {
       }
     },
     "OR_CO__t10":   {
-      raise: [],
-      push:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+      raise: ["AA","KK"],
+      push:  ["QQ","JJ","TT","99","88","77","66","55","44","33","22",
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s",
               "QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","T7s",
               "98s","97s","87s","86s","76s","65s",
               "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
               "KQo","KJo","KTo","K9o","QJo","QTo","JTo"],
-      call:  []
+      call:  [],
+      // QTo: solo los 3 combos con Q\u2660 van a raise (los otros 9 quedan en push por base)
+      comboOverrides: {
+        "QTo": { raise: ["QsTh","QsTd","QsTc"] }
+      }
     },
     "OR_BTN__t10":  {
       raise: ["AA","KK","QQ","JJ","K9s"],
