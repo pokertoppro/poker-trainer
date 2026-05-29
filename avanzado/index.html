@@ -812,6 +812,10 @@
             <span class="code">50BB</span>
             <span class="desc">Stack medio</span>
           </div>
+          <div class="dropdown-item" data-stack="30" data-format-only="torneo">
+            <span class="code">30BB</span>
+            <span class="desc">Torneo 4-bet (solo Torneo)</span>
+          </div>
           <div class="dropdown-item" data-stack="20" data-format-only="torneo">
             <span class="code">20BB</span>
             <span class="desc">Torneo medio (solo Torneo)</span>
@@ -930,17 +934,20 @@ const SEAT_COORDS = [
 // del formato y stack actuales (se evalúa dinámicamente)
 const SPOT_TYPES = [
   { code: 'OR_ADV', desc: 'OR Avanzado (Open Raise Amp)',                enabled: true,
-    // OR_ADV no aplica a Torneo 10bb (ahí se usa OR clásico push/fold)
-    contextCondition: () => !(selectedFormat === 'torneo' && String(selectedStack) === '10') },
+    // OR_ADV no aplica a Torneo 10bb (ah\u00ed se usa OR cl\u00e1sico) ni Torneo 30bb (4b)
+    contextCondition: () => !(selectedFormat === 'torneo' && (String(selectedStack) === '10' || String(selectedStack) === '30')) },
   { code: '3b',     desc: '3-bet vs Open',                              enabled: true,
-    contextCondition: () => !(selectedFormat === 'torneo' && String(selectedStack) === '10') },
+    // 3b no aplica a Torneo 10bb (push/fold) ni Torneo 30bb (4b)
+    contextCondition: () => !(selectedFormat === 'torneo' && (String(selectedStack) === '10' || String(selectedStack) === '30')) },
   { code: 'OR',     desc: 'Open Raise (Push/Fold 10bb)',                enabled: true,
-    // OR clásico SOLO disponible para Torneo 10bb
+    // OR cl\u00e1sico SOLO disponible para Torneo 10bb
     contextCondition: () => selectedFormat === 'torneo' && String(selectedStack) === '10' },
   { code: 'ROL',    desc: 'Raise Over Limp',                            enabled: false },
   { code: 'Sqz',    desc: 'Squeeze (OR + caller)',                      enabled: false },
   { code: 'C3b',    desc: 'Facing 3-bet (tras abrir)',                  enabled: false },
-  { code: '4b',     desc: '4-bet',                                      enabled: false },
+  { code: '4b',     desc: '4-bet (Hero abri\u00f3 y enfrenta 3b)',           enabled: true,
+    // 4b solo disponible para Torneo 30bb
+    contextCondition: () => selectedFormat === 'torneo' && String(selectedStack) === '30' },
   { code: 'C4b',    desc: 'Facing 4-bet',                               enabled: false },
   { code: 'Defend', desc: 'Defender BB vs Open',                        enabled: false },
   { code: 'CC',     desc: 'Cold Call (no-BB)',                          enabled: false }
@@ -970,6 +977,7 @@ function totalExpectedRangesForSpot(spotCode) {
   if (spotCode === 'OR' || spotCode === 'OR_ADV') return 7;     // 7 posiciones (sin BB)
   if (spotCode === '3b') return 10;                              // 10 escenarios
   if (spotCode === 'ROL') return 6;                              // 6 escenarios
+  if (spotCode === '4b') return 7;                               // 4 OOP (EP/MP/LP/SB) + 3 IP (EP/MP/LP)
   return 0;
 }
 
@@ -988,6 +996,10 @@ function getBaseKeysForSpot(spotCode) {
     if (typeof ROL_SCENARIOS !== 'undefined') {
       ROL_SCENARIOS.forEach(s => keys.push(s.rangeKey));
     }
+  } else if (spotCode === '4b') {
+    // 4 OOP + 3 IP. SB solo tiene OOP (BB siempre act\u00faa despu\u00e9s postflop).
+    ['EP','MP','LP','SB'].forEach(b => keys.push('4b_' + b + '_OOP'));
+    ['EP','MP','LP'].forEach(b => keys.push('4b_' + b + '_IP'));
   }
   return keys;
 }
@@ -1014,7 +1026,7 @@ function countRangesForContext(format, stack) {
   const savedFmt = selectedFormat, savedStk = selectedStack;
   selectedFormat = format; selectedStack = stack;
   let count = 0;
-  ['OR','OR_ADV','3b','ROL'].forEach(spotCode => {
+  ['OR','OR_ADV','3b','ROL','4b'].forEach(spotCode => {
     count += countRangesForSpot(spotCode);
   });
   // Restaurar
@@ -1711,6 +1723,9 @@ function newHand() {
     const heroesInAnyScenario = new Set();
     ROL_SCENARIOS.forEach(s => s.heroes.forEach(h => heroesInAnyScenario.add(h)));
     validHeroPositions = validHeroPositions.filter(p => heroesInAnyScenario.has(p));
+  } else if (selectedSpot === '4b') {
+    // 4b: Hero abri\u00f3. BB no puede ser Hero (no abre). BTN tampoco (no se trabaja a\u00fan).
+    validHeroPositions = validHeroPositions.filter(p => p !== 'BB' && p !== 'BTN');
   }
 
   if (validHeroPositions.length === 0) {
@@ -1774,6 +1789,49 @@ function newHand() {
 
     rangeKey = scenario.rangeKey;
     range = resolveRange(rangeKey);
+  } else if (selectedSpot === '4b') {
+    // 4-bet: Hero abri\u00f3 desde su posici\u00f3n y enfrenta un 3b del villano.
+    // Mapeo de posici\u00f3n del Hero a bucket:
+    //   EP = UTG, UTG1
+    //   MP = LJ, HJ
+    //   LP = CO
+    //   SB = SB
+    //   (BTN no se trabaja a\u00fan)
+    let bucket;
+    if (heroPos === 'UTG' || heroPos === 'UTG1') bucket = 'EP';
+    else if (heroPos === 'LJ' || heroPos === 'HJ') bucket = 'MP';
+    else if (heroPos === 'CO') bucket = 'LP';
+    else if (heroPos === 'SB') bucket = 'SB';
+    else return newHand(); // BTN y BB no aplican
+
+    // Determinar villano que 3-bete\u00f3 y si Hero queda IP u OOP postflop:
+    //   - Villano IP postflop (a la izquierda del Hero, no Blind) \u2192 Hero OOP \u2192 sufijo _OOP
+    //   - Villano OOP postflop (Blind: SB o BB)                  \u2192 Hero IP  \u2192 sufijo _IP
+    // El Hero=SB solo tiene versi\u00f3n OOP (BB siempre act\u00faa despu\u00e9s postflop).
+    const heroIdxLocal = POSITIONS.indexOf(heroPos);
+    // Pool de posibles villanos: posiciones a la izquierda del Hero + Blinds (SB/BB)
+    let allVillains = POSITIONS.filter((p, i) => i > heroIdxLocal || p === 'SB' || p === 'BB');
+    allVillains = allVillains.filter(p => p !== heroPos);
+    if (selectedVillainPositions !== null) {
+      allVillains = allVillains.filter(p => selectedVillainPositions.has(p));
+    }
+    if (allVillains.length === 0) return newHand();
+
+    let chosenVillain = pickRandom(allVillains);
+    // Determinar tipo (IP/OOP)
+    const isBlind = (chosenVillain === 'SB' || chosenVillain === 'BB');
+    let suffix;
+    if (heroPos === 'SB') {
+      // Hero=SB siempre est\u00e1 OOP postflop (BB es el \u00fanico villano posible)
+      suffix = 'OOP';
+    } else {
+      suffix = isBlind ? 'IP' : 'OOP';
+    }
+    villainPos = chosenVillain;
+    rangeKey = '4b_' + bucket + '_' + suffix;
+    range = resolveRange(rangeKey);
+    // Si el rango est\u00e1 vac\u00edo, intentar de nuevo (otra mano/villano)
+    if (!range || Object.keys(range).length === 0) return newHand();
   }
 
   // Elegir mano con sesgo de fold según FOLD_PERCENTAGE
@@ -2019,7 +2077,7 @@ function configureButtonsForScenario() {
   }
 
   // Modo 3-bet Torneo 20bb: 4 acciones — Fold | Call | 5bb/6bb | 3b Push
-  // Tamaño del raise depende de la posición del Hero:
+  // Tama\u00f1o del raise depende de la posici\u00f3n del Hero:
   //   - SB y BB (OOP): 6bb
   //   - IP (UTG1..BTN): 5bb
   if (sc.spotType === '3b' && String(selectedStack) === '20') {
@@ -2027,6 +2085,14 @@ function configureButtonsForScenario() {
     const isOOP = (sc.heroPos === 'SB' || sc.heroPos === 'BB');
     btnRaise.textContent = isOOP ? '6bb' : '5bb';
     btnPush.textContent = '3b Push';
+  }
+
+  // Modo 4-bet Torneo 30bb: 4 acciones \u2014 Fold | Call | 10bb (4b) | 4b Push
+  // Hero abri\u00f3 y enfrenta un 3b del villano. La acci\u00f3n raise = 4-bet a 10bb.
+  if (sc.spotType === '4b' && String(selectedStack) === '30') {
+    btnPush.style.display = '';
+    btnRaise.textContent = '10bb';
+    btnPush.textContent = '4b Push';
   }
 }
 
@@ -2094,11 +2160,15 @@ function showFeedback(userAction, correctAction, isOk) {
   const is3bT20OOP = is3bT20 && (sc.heroPos === 'SB' || sc.heroPos === 'BB');
   // En OR Torneo 10bb, raise=2bb
   const isOR10 = sc.spotType === 'OR' && String(selectedStack) === '10';
+  // En 4b Torneo 30bb, raise=10BB, push=4B PUSH
+  const is4bT30 = sc.spotType === '4b' && String(selectedStack) === '30';
   const displayAction = (a) => {
     if (isBbRol && a === 'call') return 'CHECK';
     if (is3bT20 && a === 'raise') return is3bT20OOP ? '6BB' : '5BB';
     if (is3bT20 && a === 'push') return '3B PUSH';
     if (isOR10 && a === 'raise') return '2BB';
+    if (is4bT30 && a === 'raise') return '10BB';
+    if (is4bT30 && a === 'push') return '4B PUSH';
     return a.toUpperCase();
   };
 
@@ -3143,6 +3213,106 @@ const RANGES_DATA = {
               "AQs","AJs","ATs","K6s",
               "AKo","AQo","AJo","ATo","A9o","A8o","A7o","A5o","A4o","A3o","A2o",
               "KQo","JTo"]
+    },
+
+    /* ---------- 4b Torneo 30bb (sufijo __t30) ----------
+       Hero abri\u00f3 y enfrenta un 3b del villano. 4 acciones:
+       fold | call | raise (4b a 10bb) | push (4b all-in).
+       Estructura igual que cash:
+         EP = Hero abri\u00f3 desde UTG/UTG1/LJ
+         MP = Hero abri\u00f3 desde HJ/CO
+         LP = Hero abri\u00f3 desde BTN
+         SB = Hero abri\u00f3 desde SB
+    */
+    "4b_EP_OOP__t30": {
+      raise: [],
+      call:  ["AA","99","88","77","66","55",
+              "AQs","AJs","ATs","KQs","KJs","KTs","QJs","QTs","JTs","T9s",
+              "AQo"],
+      push:  ["KK","QQ","JJ","TT",
+              "AKs","A5s","A4s",
+              "AKo"]
+    },
+    "4b_MP_OOP__t30": {
+      raise: [],
+      call:  ["AA",
+              "AQs","AJs","ATs","A9s","A8s","KQs","KTs","QJs","QTs","JTs","T9s","76s",
+              "AQo","AJo","KQo"],
+      push:  ["KK","QQ","JJ","TT","99",
+              "AKs","KJs","A5s",
+              "AKo"],
+      // AQo: solo los 3 combos con A♠ van a push (los otros 9 quedan en call por base)
+      comboOverrides: {
+        "AQo": { push: ["AsQh","AsQd","AsQc"] }
+      }
+    },
+    "4b_LP_OOP__t30": {
+      raise: [],
+      call:  ["AA","66",
+              "AJs","ATs","A9s","A8s","A4s","A3s","A2s",
+              "K9s","QJs","QTs","Q9s","JTs","J9s","T9s","98s","87s","76s","65s","54s",
+              "AJo","ATo","KQo","KJo"],
+      push:  ["KK","QQ","JJ","TT","99","88","77","55",
+              "AKs","AQs","A7s","A6s","A5s","KQs","KJs","KTs",
+              "AKo","AQo"]
+    },
+    "4b_SB_OOP__t30": {
+      raise: [],
+      call:  ["AA","KK","99","88","77",
+              "AJs","ATs","A9s","A8s","A7s","A6s",
+              "KQs","KJs","KTs","K9s",
+              "QJs","QTs","Q9s","JTs","J9s","T9s","T8s",
+              "98s","87s","76s","65s","54s",
+              "KQo","KJo","KTo","QJo","QTo","JTo"],
+      push:  ["QQ","JJ","TT","66","55","44",
+              "AKs","AQs","A5s",
+              "AKo","AQo"],
+      // KQo y KJo: solo los 3 combos con K♠ van a push (los otros 9 quedan en call por base)
+      comboOverrides: {
+        "KQo": { push: ["KsQh","KsQd","KsQc"] },
+        "KJo": { push: ["KsJh","KsJd","KsJc"] }
+      }
+    },
+
+    /* ---------- 4b IP Torneo 30bb (Hero IP postflop) ----------
+       Hero abri\u00f3 y un Blind (SB/BB) hizo 3b. Postflop el Blind act\u00faa primero,
+       Hero queda IP. Buckets:
+         EP = Hero abri\u00f3 desde UTG/UTG1
+         MP = Hero abri\u00f3 desde LJ/HJ
+         LP = Hero abri\u00f3 desde CO
+       (BTN se trabaja aparte, Hero=SB siempre OOP)
+    */
+    "4b_EP_IP__t30": {
+      raise: [],
+      call:  ["AA","KK","TT","99",
+              "AKs","AQs","AJs","ATs","KJs","QJs",
+              "AQo"],
+      push:  ["QQ","JJ","KQs","AKo"]
+    },
+    "4b_MP_IP__t30": {
+      raise: [],
+      call:  ["AA","KK","99","88","77","66",
+              "AKs","AQs","AJs","ATs","A9s",
+              "KQs","KTs","QJs","QTs","JTs",
+              "AJo","KQo"],
+      push:  ["QQ","JJ","TT","KJs","AKo"]
+    },
+    "4b_LP_IP__t30": {
+      raise: [],
+      call:  ["AA","KK","QQ","99","88","77","66","55",
+              "AJs","ATs","A9s","A8s","A7s",
+              "KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+              "QJs","QTs","Q9s","Q8s","Q7s",
+              "JTs","J9s","J8s","J7s",
+              "T9s","T8s","T7s","98s","97s","87s","76s","65s","54s",
+              "AJo","ATo","KQo","KJo","KTo","QJo"],
+      push:  ["JJ","TT","44","33",
+              "A6s","A5s","A4s","A3s","A2s",
+              "AKo","AQo","A9o"],
+      // QQ: solo los 3 combos con \u2660 van a push (los otros 3 quedan en call por base)
+      comboOverrides: {
+        "QQ": { push: ["QsQh","QsQd","QsQc"] }
+      }
     }
   }
 };
