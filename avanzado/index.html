@@ -944,7 +944,9 @@ const SPOT_TYPES = [
     contextCondition: () => selectedFormat === 'torneo' && String(selectedStack) === '10' },
   { code: 'ROL',    desc: 'Raise Over Limp',                            enabled: false },
   { code: 'Sqz',    desc: 'Squeeze (OR + caller)',                      enabled: false },
-  { code: 'C3b',    desc: 'Facing 3-bet (tras abrir)',                  enabled: false },
+  { code: 'C3b4b',  desc: 'C3b y 4b (Hero abri\u00f3, villano 3b)',          enabled: true,
+    // Solo disponible en Cash 100bb por ahora
+    contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: '4b',     desc: '4-bet (Hero abri\u00f3 y enfrenta 3b)',           enabled: true,
     // 4b solo disponible para Torneo 30bb
     contextCondition: () => selectedFormat === 'torneo' && String(selectedStack) === '30' },
@@ -978,6 +980,7 @@ function totalExpectedRangesForSpot(spotCode) {
   if (spotCode === '3b') return 10;                              // 10 escenarios
   if (spotCode === 'ROL') return 6;                              // 6 escenarios
   if (spotCode === '4b') return 7;                               // 4 OOP (EP/MP/LP/SB) + 3 IP (EP/MP/LP)
+  if (spotCode === 'C3b4b') return 4;                            // 4 OOP (EP/MP/LP/SB)
   return 0;
 }
 
@@ -1000,6 +1003,9 @@ function getBaseKeysForSpot(spotCode) {
     // 4 OOP + 3 IP. SB solo tiene OOP (BB siempre act\u00faa despu\u00e9s postflop).
     ['EP','MP','LP','SB'].forEach(b => keys.push('4b_' + b + '_OOP'));
     ['EP','MP','LP'].forEach(b => keys.push('4b_' + b + '_IP'));
+  } else if (spotCode === 'C3b4b') {
+    // Solo OOP por ahora
+    ['EP','MP','LP','SB'].forEach(b => keys.push('C3b4b_' + b + '_OOP'));
   }
   return keys;
 }
@@ -1026,7 +1032,7 @@ function countRangesForContext(format, stack) {
   const savedFmt = selectedFormat, savedStk = selectedStack;
   selectedFormat = format; selectedStack = stack;
   let count = 0;
-  ['OR','OR_ADV','3b','ROL','4b'].forEach(spotCode => {
+  ['OR','OR_ADV','3b','ROL','4b','C3b4b'].forEach(spotCode => {
     count += countRangesForSpot(spotCode);
   });
   // Restaurar
@@ -1313,7 +1319,7 @@ function refreshVillainDropdown() {
 function refreshVillainVisibility() {
   const wrap = document.getElementById('villainWrap');
   // Actualmente solo '3b' necesita villano
-  const needsVillain = (selectedSpot === '3b');
+  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'C3b4b');
   wrap.style.display = needsVillain ? '' : 'none';
 }
 
@@ -1726,6 +1732,11 @@ function newHand() {
   } else if (selectedSpot === '4b') {
     // 4b: Hero abri\u00f3. BB no puede ser Hero (no abre). BTN tampoco (no se trabaja a\u00fan).
     validHeroPositions = validHeroPositions.filter(p => p !== 'BB' && p !== 'BTN');
+  } else if (selectedSpot === 'C3b4b') {
+    // C3b4b: Hero abri\u00f3 desde EP/MP/LP(=CO)/SB. BB y BTN no son Hero v\u00e1lidos.
+    validHeroPositions = validHeroPositions.filter(p =>
+      p === 'UTG' || p === 'UTG1' || p === 'LJ' || p === 'HJ' || p === 'CO' || p === 'SB'
+    );
   }
 
   if (validHeroPositions.length === 0) {
@@ -1832,6 +1843,64 @@ function newHand() {
     range = resolveRange(rangeKey);
     // Si el rango est\u00e1 vac\u00edo, intentar de nuevo (otra mano/villano)
     if (!range || Object.keys(range).length === 0) return newHand();
+  } else if (selectedSpot === 'C3b4b') {
+    // C3b y 4b combinado: Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n,
+    // villano hizo 3b. Respuesta correcta: Fold | Call | 4b (raise).
+    // Solo OOP por ahora (villano IP postflop = a la izquierda del Hero, no Blind).
+    // Mapeo bucket:
+    //   EP = UTG, UTG1   MP = LJ, HJ   LP = CO   SB = SB
+    let bucket;
+    if (heroPos === 'UTG' || heroPos === 'UTG1') bucket = 'EP';
+    else if (heroPos === 'LJ' || heroPos === 'HJ') bucket = 'MP';
+    else if (heroPos === 'CO') bucket = 'LP';
+    else if (heroPos === 'SB') bucket = 'SB';
+    else return newHand();
+
+    // Elegir villano (solo IP postflop = a la izquierda, no Blind, salvo Hero=SB que enfrenta solo BB)
+    const heroIdxLocal = POSITIONS.indexOf(heroPos);
+    let allVillains;
+    if (heroPos === 'SB') {
+      allVillains = ['BB'];
+    } else {
+      // Villano debe estar a la izquierda (mayor \u00edndice) y NO ser Blind
+      allVillains = POSITIONS.filter((p, i) => i > heroIdxLocal && p !== 'SB' && p !== 'BB');
+    }
+    if (selectedVillainPositions !== null) {
+      allVillains = allVillains.filter(p => selectedVillainPositions.has(p));
+    }
+    if (allVillains.length === 0) return newHand();
+    villainPos = pickRandom(allVillains);
+
+    // Cargar el rango C3b4b OOP
+    rangeKey = 'C3b4b_' + bucket + '_OOP';
+    const c3bRange = resolveRange(rangeKey);
+    if (!c3bRange || Object.keys(c3bRange).length === 0) return newHand();
+
+    // Cargar el rango OR de la posici\u00f3n del Hero (las manos con las que abrir\u00eda)
+    // Usar OR_ADV si est\u00e1 disponible, sino OR
+    const orRange = resolveRange('OR_ADV_' + heroPos) || resolveRange('OR_' + heroPos);
+    if (!orRange || Object.keys(orRange).length === 0) return newHand();
+
+    // Filtrar manos: solo las que est\u00e1n en el rango OR (Hero las habr\u00eda abierto)
+    const orHands = Object.keys(orRange).filter(h => h !== '__overrides' && h !== '__pct');
+    // Combinar las acciones del C3b4b con el rango OR para construir el rango final
+    // Cada mano del OR tendr\u00e1: la acci\u00f3n del C3b4b (call/raise) si est\u00e1, sino 'fold'
+    range = {};
+    orHands.forEach(h => {
+      const c3bAction = c3bRange[h];
+      if (c3bAction === 'call' || c3bAction === 'raise') {
+        range[h] = c3bAction;
+      } else {
+        range[h] = 'fold';
+      }
+    });
+    // Copiar overrides del C3b4b (si los hay) al rango efectivo
+    if (c3bRange.__overrides) {
+      Object.defineProperty(range, '__overrides', {
+        value: c3bRange.__overrides,
+        enumerable: false
+      });
+    }
   }
 
   // Elegir mano con sesgo de fold según FOLD_PERCENTAGE
@@ -1889,11 +1958,19 @@ function renderTable() {
   let pot = 1.5; // SB(0.5) + BB(1)
   // Tama\u00f1o del open raise (OR): 2bb en torneo, 3bb en cash
   const orSize = (selectedFormat === 'torneo') ? 2 : 3;
+  // Tama\u00f1o del 3b: 9bb en cash (3x el OR), 7bb en torneo
+  const threeBetSize = (selectedFormat === 'torneo') ? 7 : 9;
   if (sc.spotType === '3b') pot += orSize; // villano abri\u00f3
   if (sc.spotType === '4b') {
-    // Hero abri\u00f3 (orSize) y villano hizo 3b a 7bb
-    pot += orSize + 7;
+    // Hero abri\u00f3 (orSize) y villano hizo 3b (threeBetSize)
+    pot += orSize + threeBetSize;
     // Si el villano es un Blind, ya pag\u00f3 la ciega; restar lo que ya pusieron
+    if (sc.villainPos === 'SB') pot -= 0.5;
+    if (sc.villainPos === 'BB') pot -= 1;
+  }
+  if (sc.spotType === 'C3b4b') {
+    // Hero abri\u00f3 (orSize) y villano hizo 3b (threeBetSize)
+    pot += orSize + threeBetSize;
     if (sc.villainPos === 'SB') pot -= 0.5;
     if (sc.villainPos === 'BB') pot -= 1;
   }
@@ -1917,6 +1994,13 @@ function renderTable() {
     }
   } else if (sc.spotType === '4b') {
     // Hero abri\u00f3, todos los anteriores foldearon. Posteriores al Hero foldearon excepto el villano.
+    for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
+    for (let i = heroIdx + 1; i < POSITIONS.length; i++) {
+      const p = POSITIONS[i];
+      if (p !== sc.villainPos) foldedPositions.add(p);
+    }
+  } else if (sc.spotType === 'C3b4b') {
+    // Igual que 4b: Hero abri\u00f3, posteriores foldearon excepto villano
     for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
     for (let i = heroIdx + 1; i < POSITIONS.length; i++) {
       const p = POSITIONS[i];
@@ -1974,6 +2058,15 @@ function renderTable() {
         else stack -= 7;
       }
     }
+    // En C3b y 4b combinado: Hero apost\u00f3 orSize (open), villano apost\u00f3 threeBetSize (3b)
+    if (sc.spotType === 'C3b4b') {
+      if (isHero) stack -= orSize;
+      if (isVillain) {
+        if (pos === 'SB') stack -= (threeBetSize - 0.5);
+        else if (pos === 'BB') stack -= (threeBetSize - 1);
+        else stack -= threeBetSize;
+      }
+    }
     if (isLimper && sc.spotType === 'ROL') {
       // Si es limper y no era ya la BB, paga para llegar a 1bb
       if (pos === 'BB') { /* ya pagó */ }
@@ -2001,6 +2094,11 @@ function renderTable() {
     if (sc.spotType === '4b') {
       if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
       if (isVillain) { chipAmount = 7; chipClass = 'chip raise'; }
+    }
+    // En C3b y 4b: Hero abri\u00f3 a orSize, villano hizo 3b a threeBetSize
+    if (sc.spotType === 'C3b4b') {
+      if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
+      if (isVillain) { chipAmount = threeBetSize; chipClass = 'chip raise'; }
     }
     // En ROL, los limpers muestran chip 1bb con el mismo estilo rojo que la BB
     if (isLimper && sc.spotType === 'ROL') {
@@ -2130,6 +2228,12 @@ function configureButtonsForScenario() {
     btnPush.style.display = '';
     btnRaise.textContent = '10bb';
     btnPush.textContent = '4b Push';
+  }
+
+  // Modo C3b y 4b combinado (Cash 100bb): 3 acciones \u2014 Fold | Call | 4b
+  // Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n, villano hizo 3b.
+  if (sc.spotType === 'C3b4b') {
+    btnRaise.textContent = '4b';
   }
 }
 
@@ -2654,7 +2758,7 @@ const RANGES_DATA = {
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K9s","K8s","K7s",
               "QJs","QTs","Q9s","JTs","J9s",
-              "T9s","T8s","98s","87s","76s","65s",
+              "T9s","T8s","98s","87s","76s","65s","54s",
               "AKo","AQo","AJo","ATo","KQo","KJo"],
       call: []
     },
@@ -2663,7 +2767,7 @@ const RANGES_DATA = {
               "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
               "KQs","KJs","KTs","K9s","K8s","K7s",
               "QJs","QTs","Q9s","JTs","J9s",
-              "T9s","T8s","98s","87s","76s","65s",
+              "T9s","T8s","98s","87s","76s","65s","54s",
               "AKo","AQo","AJo","ATo","KQo","KJo"],
       call: []
     },
@@ -3360,6 +3464,65 @@ const RANGES_DATA = {
       // QQ: solo los 3 combos con \u2660 van a push (los otros 3 quedan en call por base)
       comboOverrides: {
         "QQ": { push: ["QsQh","QsQd","QsQc"] }
+      }
+    },
+
+    /* ---------- C3b y 4b Cash 100bb (OOP) ----------
+       Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n; villano hizo 3b.
+       3 acciones: fold | call (C3b) | raise (4b). El rango base solo lista las manos
+       que NO foldean: la app filtra contra el rango OR y trata el resto como fold.
+       Buckets:
+         EP = Hero abri\u00f3 desde UTG/UTG1
+         MP = Hero abri\u00f3 desde LJ/HJ
+         LP = Hero abri\u00f3 desde CO
+         SB = Hero abri\u00f3 desde SB
+       Solo se carga la versi\u00f3n OOP (villano IP postflop = no Blind, a la izquierda).
+    */
+    "C3b4b_EP_OOP": {
+      raise: ["AA","KK","AKs","A5s","A4s"],
+      call:  ["QQ","JJ","TT","99","88","77","66","55",
+              "AQs","AJs","ATs","KQs","QJs","JTs","76s","65s",
+              "AKo"]
+    },
+    "C3b4b_MP_OOP": {
+      raise: ["AA","KK","AKs","A5s","A4s","KTs"],
+      call:  ["QQ","JJ","TT","99","88","77","66","55","44",
+              "AQs","AJs","ATs","KQs","KJs","QJs","JTs","87s","76s","65s","54s",
+              "AQo","AKo"],
+      // Overrides por combos:
+      // - QQ: solo los 3 combos con \u2660 van a raise (los otros 3 quedan en call por base)
+      // - AKo: solo los 3 combos con A\u2660 van a raise (los otros 9 quedan en call por base)
+      comboOverrides: {
+        "QQ":  { raise: ["QsQh","QsQd","QsQc"] },
+        "AKo": { raise: ["AsKh","AsKd","AsKc"] }
+      }
+    },
+    "C3b4b_LP_OOP": {
+      raise: ["AA","KK","QQ","AKs","KJs","KTs","A5s","A4s","AKo"],
+      call:  ["JJ","TT","99","88","77","66","55","44","33","22",
+              "AQs","AJs","ATs","A9s","A8s","KQs","K9s","QJs","QTs","JTs","T9s",
+              "76s","65s","54s","AQo","KQo"],
+      // JJ: solo los 3 combos con \u2660 van a raise (los otros 3 quedan en call por base)
+      comboOverrides: {
+        "JJ": { raise: ["JsJh","JsJd","JsJc"] }
+      }
+    },
+    "C3b4b_SB_OOP": {
+      raise: ["AA","KK","QQ","JJ",
+              "AKs","A5s","A4s","K5s","K4s",
+              "AKo","AQo"],
+      call:  ["TT","99","88","77","66","55","44","33","22",
+              "AQs","AJs","ATs","A9s","A8s","A7s",
+              "KQs","KJs","KTs","K9s","K8s","K7s",
+              "QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s",
+              "98s","97s","87s","76s","65s","54s",
+              "AJo","KQo"],
+      // Overrides por combos:
+      // - TT: solo los 3 combos con \u2660 van a raise (los otros 3 quedan en call por base)
+      // - KJo: solo los 6 combos con al menos una \u2660 van a raise (los otros 6 a fold)
+      comboOverrides: {
+        "TT":  { raise: ["TsTh","TsTd","TsTc"] },
+        "KJo": { raise: ["KsJh","KsJd","KsJc","KhJs","KdJs","KcJs"] }
       }
     }
   }
